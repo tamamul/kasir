@@ -47,16 +47,24 @@ class _UsersScreenState extends State<UsersScreen> {
                 decoration: InputDecoration(labelText: u == null ? 'Password' : 'Password (kosongkan jika tidak ganti)'),
               ),
               DropdownButtonFormField<String>(
-                initialValue: role,
-                items: const [
-                  DropdownMenuItem(value: 'kasir', child: Text('Kasir')),
-                  DropdownMenuItem(value: 'admin', child: Text('Admin')),
-                ],
-                onChanged: (v) => setLocal(() => role = v ?? 'kasir'),
-                decoration: const InputDecoration(labelText: 'Role'),
-              ),
-            ],
-          ),
+  value: role,
+  decoration: const InputDecoration(labelText: 'Role'),
+  items: const [
+    DropdownMenuItem(
+      value: 'kasir',
+      child: Text('Kasir'),
+    ),
+    DropdownMenuItem(
+      value: 'admin',
+      child: Text('Admin'),
+    ),
+  ],
+  onChanged: (v) {
+    setLocal(() {
+      role = v ?? 'kasir';
+    });
+  },
+),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
             FilledButton(
