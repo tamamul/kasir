@@ -1,0 +1,336 @@
+import 'package:flutter/material.dart';
+import '../services/api_client.dart';
+import '../utils/format.dart';
+
+class KasirScreen extends StatefulWidget {
+  const KasirScreen({super.key});
+
+  @override
+  State<KasirScreen> createState() => _KasirScreenState();
+}
+
+class _CartItem {
+  final int produkId;
+  final String nama;
+  final double harga;
+  int qty;
+  _CartItem({required this.produkId, required this.nama, required this.harga, this.qty = 1});
+  double get subtotal => harga * qty;
+}
+
+class _KasirScreenState extends State<KasirScreen> {
+  final _searchCtrl = TextEditingController();
+  final _bayarCtrl = TextEditingController();
+  final _pelangganCtrl = TextEditingController();
+  List<dynamic> _hasil = [];
+  final List<_CartItem> _cart = [];
+  bool _loadingSearch = false;
+  bool _loadingBayar = false;
+
+  double get _total => _cart.fold(0, (sum, i) => sum + i.subtotal);
+  double get _kembali => (double.tryParse(_bayarCtrl.text) ?? 0) - _total;
+
+  Future<void> _cari(String q) async {
+    if (q.trim().isEmpty) {
+      setState(() => _hasil = []);
+      return;
+    }
+    setState(() => _loadingSearch = true);
+    final res = await ApiClient.call('getProduk', {'q': q, 'aktif': 'Y'});
+    if (!mounted) return;
+    setState(() {
+      _loadingSearch = false;
+      _hasil = res.isSuccess ? res.data as List<dynamic> : [];
+    });
+  }
+
+  Future<void> _scanBarcode(String barcode) async {
+    if (barcode.trim().isEmpty) return;
+    final res = await ApiClient.call('getProdukByBarcode', {'barcode': barcode});
+    if (res.isSuccess) {
+      _tambahKeKeranjang(res.data);
+      _searchCtrl.clear();
+      setState(() => _hasil = []);
+    } else {
+      _cari(barcode); // mungkin dia ngetik nama, bukan scan barcode
+    }
+  }
+
+  void _tambahKeKeranjang(Map<String, dynamic> produk) {
+    final id = int.parse(produk['id'].toString());
+    final existing = _cart.where((i) => i.produkId == id);
+    setState(() {
+      if (existing.isNotEmpty) {
+        existing.first.qty += 1;
+      } else {
+        _cart.add(_CartItem(
+          produkId: id,
+          nama: produk['nama'].toString(),
+          harga: double.parse(produk['harga_jual'].toString()),
+        ));
+      }
+    });
+  }
+
+  void _ubahQty(_CartItem item, int delta) {
+    setState(() {
+      item.qty += delta;
+      if (item.qty <= 0) _cart.remove(item);
+    });
+  }
+
+  Future<void> _bayar() async {
+    if (_cart.isEmpty) {
+      _snack('Keranjang masih kosong');
+      return;
+    }
+    final bayar = double.tryParse(_bayarCtrl.text) ?? 0;
+    if (bayar < _total) {
+      _snack('Uang bayar kurang dari total belanja');
+      return;
+    }
+
+    setState(() => _loadingBayar = true);
+    final res = await ApiClient.call('prosesPenjualan', {
+      'pelanggan': _pelangganCtrl.text,
+      'bayar': bayar,
+      'items': _cart.map((i) => {'produk_id': i.produkId, 'qty': i.qty}).toList(),
+    });
+    if (!mounted) return;
+    setState(() => _loadingBayar = false);
+
+    if (!res.isSuccess) {
+      _snack('Gagal: ${res.message}');
+      return;
+    }
+
+    _tampilkanStruk(res.data);
+    setState(() {
+      _cart.clear();
+      _bayarCtrl.clear();
+      _pelangganCtrl.clear();
+    });
+  }
+
+  void _snack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  void _tampilkanStruk(Map<String, dynamic> data) {
+    final penjualan = data['penjualan'];
+    final items = data['items'] as List<dynamic>;
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Struk Belanja'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(penjualan['no_nota'].toString(), style: const TextStyle(fontWeight: FontWeight.bold)),
+              Text(penjualan['tanggal'].toString(), style: const TextStyle(color: Colors.grey)),
+              const Divider(),
+              for (final i in items)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(child: Text('${i['nama']} x${i['qty']}')),
+                      Text(rupiah(i['subtotal'])),
+                    ],
+                  ),
+                ),
+              const Divider(),
+              _baris('Total', penjualan['total']),
+              _baris('Bayar', penjualan['bayar']),
+              _baris('Kembali', penjualan['kembali']),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Transaksi Baru')),
+        ],
+      ),
+    );
+  }
+
+  Widget _baris(String label, dynamic value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+        Text(rupiah(value), style: const TextStyle(fontWeight: FontWeight.bold)),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth > 700;
+        final pencarian = _buildPencarian();
+        final keranjang = _buildKeranjang();
+        if (isWide) {
+          return Row(
+            children: [
+              Expanded(flex: 3, child: pencarian),
+              const VerticalDivider(width: 1),
+              Expanded(flex: 2, child: keranjang),
+            ],
+          );
+        }
+        return Column(
+          children: [
+            Expanded(child: pencarian),
+            const Divider(height: 1),
+            SizedBox(height: 340, child: keranjang),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildPencarian() {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _searchCtrl,
+            autofocus: true,
+            decoration: InputDecoration(
+              hintText: 'Scan barcode atau ketik nama produk...',
+              prefixIcon: const Icon(Icons.search),
+              border: const OutlineInputBorder(),
+              suffixIcon: _loadingSearch
+                  ? const Padding(
+                      padding: EdgeInsets.all(14),
+                      child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                    )
+                  : null,
+            ),
+            onChanged: _cari,
+            onSubmitted: _scanBarcode,
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: _hasil.isEmpty
+                ? const Center(child: Text('Cari atau scan produk untuk mulai', style: TextStyle(color: Colors.grey)))
+                : GridView.builder(
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      mainAxisSpacing: 8,
+                      crossAxisSpacing: 8,
+                      childAspectRatio: 2.4,
+                    ),
+                    itemCount: _hasil.length,
+                    itemBuilder: (_, i) {
+                      final p = _hasil[i] as Map<String, dynamic>;
+                      return Card(
+                        child: InkWell(
+                          onTap: () => _tambahKeKeranjang(p),
+                          child: Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(p['nama'].toString(),
+                                    style: const TextStyle(fontWeight: FontWeight.w600),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis),
+                                Text(rupiah(p['harga_jual']), style: const TextStyle(color: Colors.grey)),
+                                Text('Stok: ${p['stok']}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildKeranjang() {
+    return Container(
+      color: Colors.grey.shade50,
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('Keranjang', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          Expanded(
+            child: _cart.isEmpty
+                ? const Center(child: Text('Belum ada item', style: TextStyle(color: Colors.grey)))
+                : ListView.builder(
+                    itemCount: _cart.length,
+                    itemBuilder: (_, i) {
+                      final item = _cart[i];
+                      return ListTile(
+                        dense: true,
+                        title: Text(item.nama),
+                        subtitle: Text(rupiah(item.harga)),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(icon: const Icon(Icons.remove_circle_outline), onPressed: () => _ubahQty(item, -1)),
+                            Text('${item.qty}'),
+                            IconButton(icon: const Icon(Icons.add_circle_outline), onPressed: () => _ubahQty(item, 1)),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          const Divider(),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Total', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              Text(rupiah(_total), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _pelangganCtrl,
+            decoration: const InputDecoration(labelText: 'Nama pelanggan (opsional)', border: OutlineInputBorder()),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _bayarCtrl,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(labelText: 'Jumlah bayar', border: OutlineInputBorder()),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Kembalian'),
+              Text(rupiah(_kembali), style: const TextStyle(fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: _loadingBayar ? null : _bayar,
+              style: FilledButton.styleFrom(backgroundColor: Colors.green, padding: const EdgeInsets.symmetric(vertical: 16)),
+              child: _loadingBayar
+                  ? const SizedBox(
+                      height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text('Bayar', style: TextStyle(fontSize: 16)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
