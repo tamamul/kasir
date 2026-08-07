@@ -65,6 +65,8 @@ class _UsersScreenState extends State<UsersScreen> {
     });
   },
 ),
+          ],
+        ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
             FilledButton(
