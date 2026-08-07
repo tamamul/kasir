@@ -1,119 +1,45 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:receive_sharing_intent/receive_sharing_intent.dart';
-import 'constants.dart';
-import 'services/pref_service.dart';
-import 'screens/upload_screen.dart';
-import 'screens/gallery_screen.dart';
+import 'package:provider/provider.dart';
+import 'config.dart';
+import 'services/api_client.dart';
+import 'services/auth_service.dart';
+import 'screens/login_screen.dart';
+import 'screens/home_shell.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await PrefService.init();
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.light,
-  ));
-  runApp(const FileZiarahApp());
+void main() {
+  ApiClient.init(AppConfig.appsScriptUrl);
+  runApp(const KasirApp());
 }
 
-class FileZiarahApp extends StatelessWidget {
-  const FileZiarahApp({super.key});
-  @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: AppConstants.appName,
-    theme: AppTheme.theme,
-    debugShowCheckedModeBanner: false,
-    home: const MainScreen(),
-  );
-}
-
-class MainScreen extends StatefulWidget {
-  const MainScreen({super.key});
-  @override
-  State<MainScreen> createState() => _MainScreenState();
-}
-
-class _MainScreenState extends State<MainScreen> {
-  int _tab = 0;
-  final _uploadKey = GlobalKey<UploadScreenState>();
-
-  // Screens
-  late final List<Widget> _screens;
-
-  @override
-  void initState() {
-    super.initState();
-    _screens = [
-      UploadScreen(key: _uploadKey),
-      GalleryScreen(myFilesOnly: true, myNama: PrefService.nama),
-      const GalleryScreen(myFilesOnly: false),
-    ];
-
-    // Terima file saat app sudah buka (dari share WA dll)
-    ReceiveSharingIntent.instance.getMediaStream().listen((files) {
-      if (files.isNotEmpty) _handleSharedFiles(files);
-    });
-
-    // Terima file saat app pertama kali dibuka via share
-    ReceiveSharingIntent.instance.getInitialMedia().then((files) {
-      if (files.isNotEmpty) _handleSharedFiles(files);
-    });
-  }
-
-  void _handleSharedFiles(List<SharedMediaFile> shared) {
-    final files = shared
-        .where((f) => f.path.isNotEmpty)
-        .map((f) => File(f.path))
-        .where((f) => f.existsSync())
-        .toList();
-
-    if (files.isEmpty) return;
-
-    // Pindah ke tab Upload
-    setState(() => _tab = 0);
-
-    // Tambah file ke UploadScreen
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _uploadKey.currentState?.addSharedFiles(files);
-    });
-
-    // Reset intent supaya tidak diproses ulang
-    ReceiveSharingIntent.instance.reset();
-  }
+class KasirApp extends StatelessWidget {
+  const KasirApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Column(children: [
-          Text(AppConstants.appName,
-            style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
-          Text(AppConstants.appSubtitle,
-            style: const TextStyle(color: AppTheme.gold, fontSize: 10)),
-        ]),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1,
-            decoration: const BoxDecoration(gradient: LinearGradient(
-              colors: [Colors.transparent, AppTheme.gold, Colors.transparent]))),
+    return ChangeNotifierProvider(
+      create: (_) => AuthService()..loadFromStorage(),
+      child: MaterialApp(
+        title: 'Kasir MARSA',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          colorSchemeSeed: const Color(0xFF2E7D32),
+          useMaterial3: true,
         ),
-      ),
-      body: IndexedStack(index: _tab, children: _screens),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _tab,
-        onTap: (i) {
-          if (i == 1) {
-            _screens[1] = GalleryScreen(myFilesOnly: true, myNama: PrefService.nama);
-          }
-          setState(() => _tab = i);
-        },
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.upload), label: 'Upload'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Riwayat Saya'),
-          BottomNavigationBarItem(icon: Icon(Icons.grid_view), label: 'Galeri Tim'),
-        ],
+        home: const AuthGate(),
       ),
     );
+  }
+}
+
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthService>();
+    if (!auth.ready) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    return auth.isLoggedIn ? const HomeShell() : const LoginScreen();
   }
 }
