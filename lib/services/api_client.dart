@@ -38,8 +38,10 @@ class ApiClient {
   ]) async {
     final body = Map<String, dynamic>.from(params);
 
+    // Sama seperti PHP
     body['action'] = action;
 
+    // Tambahkan token jika ada
     if (token != null &&
         token!.isNotEmpty &&
         !body.containsKey('token')) {
@@ -48,30 +50,36 @@ class ApiClient {
 
     final jsonBody = jsonEncode(body);
 
-    debugPrint('================================');
-    debugPrint('API ACTION : $action');
-    debugPrint('API URL    : $baseUrl');
-    debugPrint('API BODY   : $jsonBody');
-    debugPrint('================================');
+    debugPrint('========== API REQUEST ==========');
+    debugPrint('URL    : $baseUrl');
+    debugPrint('ACTION : $action');
+    debugPrint('BODY   : $jsonBody');
 
     try {
-      final response = await _postAppsScript(
-        Uri.parse(baseUrl),
-        jsonBody,
-      );
+      final response = await http
+          .post(
+            Uri.parse(baseUrl),
+            headers: const {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonBody,
+          )
+          .timeout(const Duration(seconds: 20));
 
       final raw = response.body.trim();
 
-      debugPrint('API HTTP   : ${response.statusCode}');
-      debugPrint('API TYPE   : ${response.headers['content-type']}');
-      debugPrint('API BODY   : ${_limit(raw)}');
+      debugPrint('========== API RESPONSE ==========');
+      debugPrint('HTTP   : ${response.statusCode}');
+      debugPrint('TYPE   : ${response.headers['content-type']}');
+      debugPrint('BODY   : ${_limit(raw)}');
 
       if (raw.isEmpty) {
         return ApiResponse(
           status: 'error',
           message:
-              'Server tidak memberikan response.\n'
-              'HTTP: ${response.statusCode}',
+              'Server tidak memberikan response. '
+              'HTTP ${response.statusCode}',
         );
       }
 
@@ -98,72 +106,27 @@ class ApiClient {
       return ApiResponse.fromJson(
         Map<String, dynamic>.from(decoded),
       );
-    } on Exception catch (e) {
+    } on http.ClientException catch (e) {
+      debugPrint('API CLIENT ERROR: $e');
+
+      return ApiResponse(
+        status: 'error',
+        message: 'Koneksi server gagal: $e',
+      );
+    } on FormatException catch (e) {
+      debugPrint('API FORMAT ERROR: $e');
+
+      return ApiResponse(
+        status: 'error',
+        message: 'Format response tidak valid: $e',
+      );
+    } catch (e) {
       debugPrint('API ERROR: $e');
 
       return ApiResponse(
         status: 'error',
         message: 'Gagal menghubungi server: $e',
       );
-    }
-  }
-
-  static Future<http.Response> _postAppsScript(
-    Uri url,
-    String body,
-  ) async {
-    final client = http.Client();
-
-    try {
-      Uri currentUrl = url;
-
-      for (int redirect = 0; redirect < 5; redirect++) {
-        debugPrint('POST → $currentUrl');
-
-        final request = http.Request(
-          'POST',
-          currentUrl,
-        );
-
-        request.headers['Content-Type'] =
-            'application/json; charset=utf-8';
-
-        request.headers['Accept'] =
-            'application/json';
-
-        request.body = body;
-
-        request.followRedirects = false;
-
-        final streamed = await client.send(request);
-
-        debugPrint(
-          'HTTP ${streamed.statusCode} ← $currentUrl',
-        );
-
-        if (streamed.statusCode >= 300 &&
-            streamed.statusCode < 400) {
-          final location = streamed.headers['location'];
-
-          debugPrint('REDIRECT → $location');
-
-          if (location == null || location.isEmpty) {
-            return await http.Response.fromStream(streamed);
-          }
-
-          currentUrl = Uri.parse(location);
-
-          continue;
-        }
-
-        return await http.Response.fromStream(streamed);
-      }
-
-      throw Exception(
-        'Terlalu banyak redirect Apps Script.',
-      );
-    } finally {
-      client.close();
     }
   }
 
