@@ -6,6 +6,7 @@ plugins {
 
 def localProperties = new Properties()
 def localPropertiesFile = rootProject.file('local.properties')
+
 if (localPropertiesFile.exists()) {
     localPropertiesFile.withReader('UTF-8') { reader ->
         localProperties.load(reader)
@@ -13,14 +14,21 @@ if (localPropertiesFile.exists()) {
 }
 
 def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
-if (flutterVersionCode == null) flutterVersionCode = '1'
+if (flutterVersionCode == null) {
+    flutterVersionCode = '1'
+}
 
 def flutterVersionName = localProperties.getProperty('flutter.versionName')
-if (flutterVersionName == null) flutterVersionName = '1.0'
+if (flutterVersionName == null) {
+    flutterVersionName = '1.0'
+}
 
 android {
     namespace "com.marsa.fileziaroh"
-    compileSdk 34
+
+    // shared_preferences_android membutuhkan SDK 35
+    compileSdk 35
+
     ndkVersion "27.0.12077973"
 
     compileOptions {
@@ -34,16 +42,21 @@ android {
 
     defaultConfig {
         applicationId "com.marsa.fileziaroh"
+
         minSdkVersion 21
-        targetSdkVersion 34
+        targetSdkVersion 35
+
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
+
         multiDexEnabled true
     }
 
     buildTypes {
         release {
+            // Sementara gunakan debug signing agar CI/CD tetap bisa build
             signingConfig signingConfigs.debug
+
             minifyEnabled false
             shrinkResources false
         }
