@@ -87,10 +87,7 @@ class _HomeShellState extends State<HomeShell> {
           ],
         ),
       ),
-      body: IndexedStack(
-        index: activeIndex,
-        children: [for (final m in menu) m.screen],
-      ),
+      body: menu[activeIndex].screen,
     );
   }
 }
