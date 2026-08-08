@@ -38,10 +38,10 @@ class ApiClient {
   ]) async {
     final body = Map<String, dynamic>.from(params);
 
-    // Sama seperti PHP
+    // Sama seperti versi PHP
     body['action'] = action;
 
-    // Tambahkan token jika ada
+    // Token
     if (token != null &&
         token!.isNotEmpty &&
         !body.containsKey('token')) {
@@ -50,29 +50,29 @@ class ApiClient {
 
     final jsonBody = jsonEncode(body);
 
-    debugPrint('========== API REQUEST ==========');
+    debugPrint('================================');
+    debugPrint('API REQUEST');
     debugPrint('URL    : $baseUrl');
     debugPrint('ACTION : $action');
     debugPrint('BODY   : $jsonBody');
+    debugPrint('================================');
 
     try {
-      final response = await http
-          .post(
-            Uri.parse(baseUrl),
-            headers: const {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-            body: jsonBody,
-          )
-          .timeout(const Duration(seconds: 20));
+      final response = await _postWithRedirect(
+        Uri.parse(baseUrl),
+        jsonBody,
+      );
 
       final raw = response.body.trim();
 
-      debugPrint('========== API RESPONSE ==========');
-      debugPrint('HTTP   : ${response.statusCode}');
-      debugPrint('TYPE   : ${response.headers['content-type']}');
-      debugPrint('BODY   : ${_limit(raw)}');
+      debugPrint('================================');
+      debugPrint('API RESPONSE');
+      debugPrint('HTTP : ${response.statusCode}');
+      debugPrint(
+        'TYPE : ${response.headers['content-type']}',
+      );
+      debugPrint('BODY : ${_limit(raw)}');
+      debugPrint('================================');
 
       if (raw.isEmpty) {
         return ApiResponse(
@@ -106,19 +106,19 @@ class ApiClient {
       return ApiResponse.fromJson(
         Map<String, dynamic>.from(decoded),
       );
-    } on http.ClientException catch (e) {
-      debugPrint('API CLIENT ERROR: $e');
-
-      return ApiResponse(
-        status: 'error',
-        message: 'Koneksi server gagal: $e',
-      );
     } on FormatException catch (e) {
-      debugPrint('API FORMAT ERROR: $e');
+      debugPrint('FORMAT ERROR: $e');
 
       return ApiResponse(
         status: 'error',
         message: 'Format response tidak valid: $e',
+      );
+    } on http.ClientException catch (e) {
+      debugPrint('CLIENT ERROR: $e');
+
+      return ApiResponse(
+        status: 'error',
+        message: 'Koneksi server gagal: $e',
       );
     } catch (e) {
       debugPrint('API ERROR: $e');
@@ -130,11 +130,89 @@ class ApiClient {
     }
   }
 
+  /// POST ke Google Apps Script.
+  ///
+  /// Apps Script sering mengembalikan:
+  ///
+  ///   302 -> script.googleusercontent.com
+  ///
+  /// Redirect tersebut harus kita ikuti sendiri supaya
+  /// POST + JSON body tidak berubah menjadi GET.
+  static Future<http.Response> _postWithRedirect(
+    Uri url,
+    String body,
+  ) async {
+    final client = http.Client();
+
+    try {
+      Uri currentUrl = url;
+
+      const maxRedirects = 8;
+
+      for (int i = 0; i <= maxRedirects; i++) {
+        debugPrint('REDIRECT REQUEST [$i]');
+        debugPrint(currentUrl.toString());
+
+        final request = http.Request(
+          'POST',
+          currentUrl,
+        );
+
+        request.headers['Content-Type'] = 'application/json';
+        request.headers['Accept'] = 'application/json';
+
+        request.body = body;
+
+        // PENTING:
+        // Jangan biarkan package http mengubah POST
+        // menjadi GET ketika menerima 301/302/303.
+        request.followRedirects = false;
+
+        final streamed = await client.send(request);
+
+        final status = streamed.statusCode;
+
+        debugPrint('REDIRECT STATUS [$i] : $status');
+
+        // Bukan redirect → selesai
+        if (status != 301 &&
+            status != 302 &&
+            status != 303 &&
+            status != 307 &&
+            status != 308) {
+          return await http.Response.fromStream(streamed);
+        }
+
+        final location = streamed.headers['location'];
+
+        if (location == null || location.isEmpty) {
+          return await http.Response.fromStream(streamed);
+        }
+
+        // Tutup response sebelum request berikutnya
+        await streamed.stream.drain();
+
+        // Bisa berupa URL absolut atau relatif
+        currentUrl = currentUrl.resolve(location);
+
+        debugPrint(
+          'REDIRECT LOCATION [$i] : $currentUrl',
+        );
+      }
+
+      throw Exception(
+        'Terlalu banyak redirect dari Google Apps Script.',
+      );
+    } finally {
+      client.close();
+    }
+  }
+
   static String _limit(String text) {
-    if (text.length <= 1000) {
+    if (text.length <= 1500) {
       return text;
     }
 
-    return '${text.substring(0, 1000)}...';
+    return '${text.substring(0, 1500)}...';
   }
 }
