@@ -39,13 +39,24 @@ class ApiClient {
   ]) async {
     final body = Map<String, dynamic>.from(params);
 
+    // Sama seperti PHP:
+    // $params['action'] = $action;
     body['action'] = action;
 
+    // Sama seperti PHP:
+    // if (!isset($params['token']) && !empty($_SESSION['token']))
     if (token != null &&
         token!.isNotEmpty &&
         !body.containsKey('token')) {
       body['token'] = token;
     }
+
+    final jsonBody = jsonEncode(body);
+
+    debugPrint('================ API REQUEST ================');
+    debugPrint('URL    : $baseUrl');
+    debugPrint('ACTION : $action');
+    debugPrint('BODY   : $jsonBody');
 
     try {
       final response = await http
@@ -55,75 +66,58 @@ class ApiClient {
               'Content-Type': 'application/json',
               'Accept': 'application/json',
             },
-            body: jsonEncode(body),
+            body: jsonBody,
           )
           .timeout(
-            const Duration(seconds: 30),
+            const Duration(seconds: 20),
           );
 
-      final responseBody = response.body.trim();
-
-      // Debug untuk melihat respons Apps Script
-      debugPrint('========== API DEBUG ==========');
-      debugPrint('URL       : $baseUrl');
-      debugPrint('ACTION    : $action');
-      debugPrint('HTTP      : ${response.statusCode}');
+      debugPrint('================ API RESPONSE ===============');
+      debugPrint('HTTP   : ${response.statusCode}');
       debugPrint(
-        'CONTENT   : ${response.headers['content-type']}',
+        'TYPE   : ${response.headers['content-type']}',
       );
       debugPrint(
-        'RESPONSE  : ${_potong(responseBody)}',
+        'BODY   : ${_limit(response.body)}',
       );
-      debugPrint('===============================');
 
-      // HTTP error
-      if (response.statusCode < 200 ||
-          response.statusCode >= 300) {
+      final raw = response.body.trim();
+
+      if (raw.isEmpty) {
+        return ApiResponse(
+          status: 'error',
+          message: 'Server tidak memberikan response.',
+        );
+      }
+
+      // Jangan langsung jsonDecode.
+      // Cek dulu apakah server mengembalikan HTML.
+      if (_looksLikeHtml(raw)) {
         return ApiResponse(
           status: 'error',
           message:
-              'HTTP ${response.statusCode}: ${_potong(responseBody)}',
+              'Apps Script mengembalikan HTML, bukan JSON.\n'
+              '${_limit(raw)}',
         );
       }
 
-      // Respons kosong
-      if (responseBody.isEmpty) {
-        return ApiResponse(
-          status: 'error',
-          message: 'Server memberikan respons kosong.',
-        );
-      }
-
-      // Server mengembalikan HTML
-      if (_isHtml(responseBody)) {
-        return ApiResponse(
-          status: 'error',
-          message:
-              'Server mengembalikan HTML, bukan JSON.\n\n'
-              '${_potong(responseBody)}',
-        );
-      }
-
-      // Parse JSON
       dynamic decoded;
 
       try {
-        decoded = jsonDecode(responseBody);
+        decoded = jsonDecode(raw);
       } catch (e) {
         return ApiResponse(
           status: 'error',
           message:
-              'Respons server bukan JSON.\n\n'
-              '${_potong(responseBody)}',
+              'Response server bukan JSON.\n'
+              '${_limit(raw)}',
         );
       }
 
-      // JSON harus object
       if (decoded is! Map) {
         return ApiResponse(
           status: 'error',
-          message:
-              'Format JSON server tidak valid.',
+          message: 'Format JSON server tidak valid.',
         );
       }
 
@@ -133,12 +127,12 @@ class ApiClient {
     } on FormatException catch (e) {
       return ApiResponse(
         status: 'error',
-        message: 'Format respons server tidak valid: $e',
+        message: 'Format response tidak valid: $e',
       );
     } on http.ClientException catch (e) {
       return ApiResponse(
         status: 'error',
-        message: 'Koneksi ke server gagal: $e',
+        message: 'Koneksi server gagal: $e',
       );
     } catch (e) {
       return ApiResponse(
@@ -148,21 +142,21 @@ class ApiClient {
     }
   }
 
-  static bool _isHtml(String body) {
-    final lower = body.toLowerCase();
+  static bool _looksLikeHtml(String body) {
+    final text = body.toLowerCase().trim();
 
-    return lower.startsWith('<!doctype html') ||
-        lower.startsWith('<html') ||
-        lower.startsWith('<head') ||
-        lower.startsWith('<script') ||
-        lower.contains('<html');
+    return text.startsWith('<!doctype html') ||
+        text.startsWith('<html') ||
+        text.startsWith('<head') ||
+        text.startsWith('<script') ||
+        text.contains('<html');
   }
 
-  static String _potong(String text) {
-    if (text.length <= 500) {
+  static String _limit(String text) {
+    if (text.length <= 1000) {
       return text;
     }
 
-    return '${text.substring(0, 500)}...';
+    return '${text.substring(0, 1000)}...';
   }
 }
