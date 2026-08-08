@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import 'config.dart';
 import 'services/api_client.dart';
 import 'services/auth_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_shell.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
   ApiClient.init(AppConfig.appsScriptUrl);
+
   runApp(const KasirApp());
 }
 
@@ -37,9 +41,17 @@ class AuthGate extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthService>();
+
     if (!auth.ready) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
     }
-    return auth.isLoggedIn ? const HomeShell() : const LoginScreen();
+
+    return auth.isLoggedIn
+        ? const HomeShell()
+        : const LoginScreen();
   }
 }
