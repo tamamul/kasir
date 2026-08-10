@@ -6,6 +6,7 @@ import 'produk_screen.dart';
 import 'kategori_screen.dart';
 import 'pelanggan_screen.dart';
 import 'pembelian_screen.dart';
+import 'piutang_screen.dart';
 import 'laporan_screen.dart';
 import 'users_screen.dart';
 import 'pengaturan_screen.dart';
@@ -33,6 +34,7 @@ class _HomeShellState extends State<HomeShell> {
     _MenuItem('Kategori', Icons.category, KategoriScreen()),
     _MenuItem('Pelanggan', Icons.people, PelangganScreen()),
     _MenuItem('Stok Masuk', Icons.move_to_inbox, PembelianScreen()),
+    _MenuItem('Piutang', Icons.request_quote, PiutangScreen()),
     _MenuItem('Laporan', Icons.receipt_long, LaporanScreen()),
   ];
 
@@ -87,7 +89,10 @@ class _HomeShellState extends State<HomeShell> {
           ],
         ),
       ),
-      body: menu[activeIndex].screen,
+      body: IndexedStack(
+        index: activeIndex,
+        children: [for (final m in menu) m.screen],
+      ),
     );
   }
 }
