@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../services/api_client.dart';
+import '../services/data_cache.dart';
 import '../utils/format.dart';
 
 class KasirScreen extends StatefulWidget {
@@ -22,37 +24,24 @@ class _KasirScreenState extends State<KasirScreen> {
   final _searchCtrl = TextEditingController();
   final _bayarCtrl = TextEditingController();
   final _pelangganCtrl = TextEditingController();
-  List<dynamic> _hasil = [];
   final List<_CartItem> _cart = [];
-  bool _loadingSearch = false;
   bool _loadingBayar = false;
 
   double get _total => _cart.fold(0, (sum, i) => sum + i.subtotal);
   double get _kembali => (double.tryParse(_bayarCtrl.text) ?? 0) - _total;
 
-  Future<void> _cari(String q) async {
-    if (q.trim().isEmpty) {
-      setState(() => _hasil = []);
-      return;
-    }
-    setState(() => _loadingSearch = true);
-    final res = await ApiClient.call('getProduk', {'q': q, 'aktif': 'Y'});
-    if (!mounted) return;
-    setState(() {
-      _loadingSearch = false;
-      _hasil = res.isSuccess ? res.data as List<dynamic> : [];
-    });
-  }
-
-  Future<void> _scanBarcode(String barcode) async {
+  void _scanBarcode(String barcode) {
     if (barcode.trim().isEmpty) return;
-    final res = await ApiClient.call('getProdukByBarcode', {'barcode': barcode});
-    if (res.isSuccess) {
-      _tambahKeKeranjang(res.data);
+    final cache = context.read<DataCache>();
+    final produk = cache.produkByBarcode(barcode.trim());
+    if (produk != null) {
+      _tambahKeKeranjang(produk);
       _searchCtrl.clear();
-      setState(() => _hasil = []);
+      setState(() {});
     } else {
-      _cari(barcode); // mungkin dia ngetik nama, bukan scan barcode
+      // barcode tidak ketemu di cache lokal -> mungkin dia ngetik nama,
+      // biarkan grid hasil pencarian di bawah yang menampilkan
+      setState(() {});
     }
   }
 
@@ -86,7 +75,7 @@ class _KasirScreenState extends State<KasirScreen> {
     }
     final bayar = double.tryParse(_bayarCtrl.text) ?? 0;
     if (bayar < _total) {
-      _snack('Uang bayar kurang dari total belanja');
+      _snack('Uang bayar kurang dari total belanja — kalau mau nyicil, pakai menu Piutang');
       return;
     }
 
@@ -102,6 +91,13 @@ class _KasirScreenState extends State<KasirScreen> {
     if (!res.isSuccess) {
       _snack('Gagal: ${res.message}');
       return;
+    }
+
+    // Update stok di cache lokal seketika, biar layar kasir langsung
+    // mencerminkan stok terbaru tanpa nunggu sync berikutnya.
+    final cache = context.read<DataCache>();
+    for (final item in _cart) {
+      cache.applyLocalStokChange(item.produkId, -item.qty);
     }
 
     _tampilkanStruk(res.data);
@@ -194,67 +190,79 @@ class _KasirScreenState extends State<KasirScreen> {
   }
 
   Widget _buildPencarian() {
-    return Padding(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TextField(
-            controller: _searchCtrl,
-            autofocus: true,
-            decoration: InputDecoration(
-              hintText: 'Scan barcode atau ketik nama produk...',
-              prefixIcon: const Icon(Icons.search),
-              border: const OutlineInputBorder(),
-              suffixIcon: _loadingSearch
-                  ? const Padding(
-                      padding: EdgeInsets.all(14),
-                      child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-                    )
-                  : null,
-            ),
-            onChanged: _cari,
-            onSubmitted: _scanBarcode,
-          ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: _hasil.isEmpty
-                ? const Center(child: Text('Cari atau scan produk untuk mulai', style: TextStyle(color: Colors.grey)))
-                : GridView.builder(
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      mainAxisSpacing: 8,
-                      crossAxisSpacing: 8,
-                      childAspectRatio: 2.4,
-                    ),
-                    itemCount: _hasil.length,
-                    itemBuilder: (_, i) {
-                      final p = _hasil[i] as Map<String, dynamic>;
-                      return Card(
-                        child: InkWell(
-                          onTap: () => _tambahKeKeranjang(p),
-                          child: Padding(
-                            padding: const EdgeInsets.all(8),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(p['nama'].toString(),
-                                    style: const TextStyle(fontWeight: FontWeight.w600),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis),
-                                Text(rupiah(p['harga_jual']), style: const TextStyle(color: Colors.grey)),
-                                Text('Stok: ${p['stok']}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                              ],
-                            ),
-                          ),
+    return Consumer<DataCache>(
+      builder: (context, cache, _) {
+        final hasil = cache.searchProduk(_searchCtrl.text);
+        return Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: _searchCtrl,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: 'Scan barcode atau ketik nama produk...',
+                  prefixIcon: const Icon(Icons.search),
+                  border: const OutlineInputBorder(),
+                  suffixIcon: cache.syncing
+                      ? const Padding(
+                          padding: EdgeInsets.all(14),
+                          child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                        )
+                      : null,
+                ),
+                onChanged: (_) => setState(() {}),
+                onSubmitted: _scanBarcode,
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: hasil.isEmpty
+                    ? Center(
+                        child: Text(
+                          cache.produk.isEmpty
+                              ? 'Menunggu data produk tersinkron...'
+                              : 'Cari atau scan produk untuk mulai',
+                          style: const TextStyle(color: Colors.grey),
                         ),
-                      );
-                    },
-                  ),
+                      )
+                    : GridView.builder(
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          mainAxisSpacing: 8,
+                          crossAxisSpacing: 8,
+                          childAspectRatio: 2.4,
+                        ),
+                        itemCount: hasil.length,
+                        itemBuilder: (_, i) {
+                          final p = hasil[i] as Map<String, dynamic>;
+                          return Card(
+                            child: InkWell(
+                              onTap: () => _tambahKeKeranjang(p),
+                              child: Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(p['nama'].toString(),
+                                        style: const TextStyle(fontWeight: FontWeight.w600),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis),
+                                    Text(rupiah(p['harga_jual']), style: const TextStyle(color: Colors.grey)),
+                                    Text('Stok: ${p['stok']}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
