@@ -1,17 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-
 import 'config.dart';
 import 'services/api_client.dart';
 import 'services/auth_service.dart';
+import 'services/data_cache.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_shell.dart';
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
+void main() {
   ApiClient.init(AppConfig.appsScriptUrl);
-
   runApp(const KasirApp());
 }
 
@@ -20,8 +17,11 @@ class KasirApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => AuthService()..loadFromStorage(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthService()..loadFromStorage()),
+        ChangeNotifierProvider(create: (_) => DataCache()),
+      ],
       child: MaterialApp(
         title: 'Kasir MARSA',
         debugShowCheckedModeBanner: false,
@@ -35,23 +35,33 @@ class KasirApp extends StatelessWidget {
   }
 }
 
-class AuthGate extends StatelessWidget {
+class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
+
+  @override
+  State<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<AuthGate> {
+  bool _cacheStarted = false;
 
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthService>();
-
     if (!auth.ready) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    return auth.isLoggedIn
-        ? const HomeShell()
-        : const LoginScreen();
+    final cache = context.read<DataCache>();
+    if (auth.isLoggedIn && !_cacheStarted) {
+      _cacheStarted = true;
+      cache.loadFromDisk();
+      cache.startBackgroundSync();
+    } else if (!auth.isLoggedIn && _cacheStarted) {
+      _cacheStarted = false;
+      cache.stopBackgroundSync();
+    }
+
+    return auth.isLoggedIn ? const HomeShell() : const LoginScreen();
   }
 }
