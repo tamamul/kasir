@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../services/api_client.dart';
+import '../services/data_cache.dart';
 import '../utils/format.dart';
 
 class ProdukScreen extends StatefulWidget {
@@ -30,6 +32,10 @@ class _ProdukScreenState extends State<ProdukScreen> {
       _kategori = resKategori.isSuccess ? resKategori.data : [];
       _loading = false;
     });
+    // Sinkronkan juga cache lokal yang dipakai layar kasir, biar produk
+    // yang baru ditambah/diubah langsung kelihatan di sana tanpa nunggu
+    // siklus background sync berikutnya.
+    if (mounted) context.read<DataCache>().sync();
   }
 
   void _bukaForm([Map<String, dynamic>? p]) {
