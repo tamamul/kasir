@@ -131,18 +131,34 @@ class _PiutangTransaksiScreenState extends State<PiutangTransaksiScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (_isBaru)
-                  DropdownButtonFormField<Map<String, dynamic>>(
-                    initialValue: _pelangganTerpilih,
-                    decoration: const InputDecoration(labelText: 'Pelanggan', border: OutlineInputBorder()),
-                    items: cache.pelanggan
-                        .where((p) => p['aktif'] == 'Y')
-                        .map<DropdownMenuItem<Map<String, dynamic>>>((p) => DropdownMenuItem(
-                              value: Map<String, dynamic>.from(p),
-                              child: Text(p['nama'].toString()),
-                            ))
-                        .toList(),
-                    onChanged: (v) => setState(() => _pelangganTerpilih = v),
-                  )
+                  DropdownButtonFormField<String>(
+  value: _pelangganTerpilih?['id']?.toString(),
+  decoration: const InputDecoration(
+    labelText: 'Pelanggan',
+    border: OutlineInputBorder(),
+  ),
+  items: cache.pelanggan
+      .where((p) => p['aktif'] == 'Y')
+      .map<DropdownMenuItem<String>>(
+        (p) => DropdownMenuItem<String>(
+          value: p['id'].toString(),
+          child: Text(p['nama'].toString()),
+        ),
+      )
+      .toList(),
+  onChanged: (id) {
+    if (id == null) {
+      setState(() => _pelangganTerpilih = null);
+      return;
+    }
+
+    final pelanggan = cache.pelanggan.firstWhere(
+      (p) => p['id'].toString() == id,
+    );
+
+    setState(() => _pelangganTerpilih = pelanggan);
+  },
+),
                 else if (_existing != null)
                   Card(
                     color: Colors.orange.shade50,
