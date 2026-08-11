@@ -16,7 +16,7 @@ dependencies:
   cupertino_icons: ^1.0.6
 
   # Scan barcode
-  mobile_scanner: 6.0.11
+  mobile_scanner: 5.2.3
 
   # Struk
   screenshot: ^3.0.0
