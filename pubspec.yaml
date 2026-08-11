@@ -15,7 +15,7 @@ dependencies:
   cupertino_icons: ^1.0.6
 
   # Scan barcode pakai kamera
-  mobile_scanner: ^7.0.0
+  mobile_scanner: ^6.0.11
 
   # Struk: render jadi gambar (share ke WA dll) & PDF (share/print dialog)
   screenshot: ^3.0.0
