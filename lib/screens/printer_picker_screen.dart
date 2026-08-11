@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_thermal_printer/flutter_thermal_printer.dart';
+import 'package:flutter_thermal_printer/utils/printer.dart';
 import '../models/receipt_data.dart';
 import '../services/thermal_printer_service.dart';
 import '../widgets/receipt_widget.dart';
