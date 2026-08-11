@@ -12,6 +12,7 @@ class DataCache extends ChangeNotifier {
   List<dynamic> produk = [];
   List<dynamic> kategori = [];
   List<dynamic> pelanggan = [];
+  Map<String, dynamic> pengaturan = {};
   DateTime? lastSync;
   bool syncing = false;
   Timer? _timer;
@@ -21,9 +22,11 @@ class DataCache extends ChangeNotifier {
     final p = prefs.getString('cache_produk');
     final k = prefs.getString('cache_kategori');
     final c = prefs.getString('cache_pelanggan');
+    final g = prefs.getString('cache_pengaturan');
     if (p != null) produk = jsonDecode(p);
     if (k != null) kategori = jsonDecode(k);
     if (c != null) pelanggan = jsonDecode(c);
+    if (g != null) pengaturan = jsonDecode(g);
     notifyListeners();
 
     // Langsung sinkron di background begitu app dibuka, tapi UI sudah
@@ -42,6 +45,7 @@ class DataCache extends ChangeNotifier {
         ApiClient.call('getProduk', {}),
         ApiClient.call('getKategori', {}),
         ApiClient.call('getPelanggan', {}),
+        ApiClient.call('getPengaturan', {}),
       ]);
 
       final prefs = await SharedPreferences.getInstance();
@@ -56,6 +60,10 @@ class DataCache extends ChangeNotifier {
       if (results[2].isSuccess) {
         pelanggan = results[2].data;
         await prefs.setString('cache_pelanggan', jsonEncode(pelanggan));
+      }
+      if (results[3].isSuccess) {
+        pengaturan = Map<String, dynamic>.from(results[3].data);
+        await prefs.setString('cache_pengaturan', jsonEncode(pengaturan));
       }
       lastSync = DateTime.now();
     } finally {
@@ -78,8 +86,12 @@ class DataCache extends ChangeNotifier {
     if (query.isEmpty) return [];
     return produk.where((p) {
       final nama = (p['nama'] ?? '').toString().toLowerCase();
+      final id = (p['id'] ?? '').toString();
+      final barcode = (p['barcode'] ?? '').toString().toLowerCase();
       final aktif = (p['aktif'] ?? 'Y').toString() == 'Y';
-      return aktif && nama.contains(query);
+      // Cocokkan ke nama, ATAU id persis (misal label manual cuma nulis
+      // "ID: 12"), ATAU barcode mengandung query.
+      return aktif && (nama.contains(query) || id == query || barcode.contains(query));
     }).toList();
   }
 
