@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/api_client.dart';
 import '../services/data_cache.dart';
+import '../services/auth_service.dart';
+import '../models/receipt_data.dart';
 import '../utils/format.dart';
+import 'barcode_scanner_screen.dart';
+import 'struk_preview_screen.dart';
 
 class KasirScreen extends StatefulWidget {
   const KasirScreen({super.key});
@@ -30,6 +34,14 @@ class _KasirScreenState extends State<KasirScreen> {
   double get _total => _cart.fold(0, (sum, i) => sum + i.subtotal);
   double get _kembali => (double.tryParse(_bayarCtrl.text) ?? 0) - _total;
 
+  Future<void> _bukaScanner() async {
+    final hasil = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (_) => const BarcodeScannerScreen()),
+    );
+    if (hasil != null) _scanBarcode(hasil);
+  }
+
   void _scanBarcode(String barcode) {
     if (barcode.trim().isEmpty) return;
     final cache = context.read<DataCache>();
@@ -39,9 +51,11 @@ class _KasirScreenState extends State<KasirScreen> {
       _searchCtrl.clear();
       setState(() {});
     } else {
-      // barcode tidak ketemu di cache lokal -> mungkin dia ngetik nama,
-      // biarkan grid hasil pencarian di bawah yang menampilkan
+      // Barcode tidak ketemu persis -> tampilkan sebagai kata kunci pencarian,
+      // siapa tahu itu sebenarnya ID produk yang diketik manual.
+      _searchCtrl.text = barcode.trim();
       setState(() {});
+      _snack('Barcode "$barcode" tidak ditemukan persis — menampilkan hasil pencarian terdekat');
     }
   }
 
@@ -66,6 +80,10 @@ class _KasirScreenState extends State<KasirScreen> {
       item.qty += delta;
       if (item.qty <= 0) _cart.remove(item);
     });
+  }
+
+  void _hapusItem(_CartItem item) {
+    setState(() => _cart.remove(item));
   }
 
   Future<void> _bayar() async {
@@ -93,14 +111,12 @@ class _KasirScreenState extends State<KasirScreen> {
       return;
     }
 
-    // Update stok di cache lokal seketika, biar layar kasir langsung
-    // mencerminkan stok terbaru tanpa nunggu sync berikutnya.
     final cache = context.read<DataCache>();
     for (final item in _cart) {
       cache.applyLocalStokChange(item.produkId, -item.qty);
     }
 
-    _tampilkanStruk(res.data);
+    _bukaStruk(res.data, cache);
     setState(() {
       _cart.clear();
       _bayarCtrl.clear();
@@ -112,54 +128,28 @@ class _KasirScreenState extends State<KasirScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  void _tampilkanStruk(Map<String, dynamic> data) {
+  void _bukaStruk(Map<String, dynamic> data, DataCache cache) {
     final penjualan = data['penjualan'];
-    final items = data['items'] as List<dynamic>;
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Struk Belanja'),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(penjualan['no_nota'].toString(), style: const TextStyle(fontWeight: FontWeight.bold)),
-              Text(penjualan['tanggal'].toString(), style: const TextStyle(color: Colors.grey)),
-              const Divider(),
-              for (final i in items)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(child: Text('${i['nama']} x${i['qty']}')),
-                      Text(rupiah(i['subtotal'])),
-                    ],
-                  ),
-                ),
-              const Divider(),
-              _baris('Total', penjualan['total']),
-              _baris('Bayar', penjualan['bayar']),
-              _baris('Kembali', penjualan['kembali']),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Transaksi Baru')),
-        ],
-      ),
-    );
-  }
+    final items = (data['items'] as List<dynamic>).map((i) => ReceiptItem.fromMap(i)).toList();
+    final pengaturan = cache.pengaturan;
+    final kasir = context.read<AuthService>().user?['username']?.toString() ?? '';
 
-  Widget _baris(String label, dynamic value) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-        Text(rupiah(value), style: const TextStyle(fontWeight: FontWeight.bold)),
-      ],
+    final receipt = ReceiptData(
+      namaToko: (pengaturan['nama_toko'] ?? 'Toko').toString(),
+      alamatToko: (pengaturan['alamat'] ?? '').toString(),
+      teleponToko: (pengaturan['telepon'] ?? '').toString(),
+      footerStruk: (pengaturan['footer_struk'] ?? '').toString(),
+      noNota: penjualan['no_nota'].toString(),
+      tanggal: penjualan['tanggal'].toString(),
+      namaPelanggan: penjualan['pelanggan']?.toString(),
+      kasir: kasir,
+      items: items,
+      total: num.tryParse(penjualan['total'].toString()) ?? 0,
+      bayar: num.tryParse(penjualan['bayar'].toString()) ?? 0,
+      kembali: num.tryParse(penjualan['kembali'].toString()) ?? 0,
     );
+
+    Navigator.push(context, MaterialPageRoute(builder: (_) => StrukPreviewScreen(data: receipt)));
   }
 
   @override
@@ -182,7 +172,7 @@ class _KasirScreenState extends State<KasirScreen> {
           children: [
             Expanded(child: pencarian),
             const Divider(height: 1),
-            SizedBox(height: 340, child: keranjang),
+            SizedBox(height: 360, child: keranjang),
           ],
         );
       },
@@ -198,22 +188,34 @@ class _KasirScreenState extends State<KasirScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              TextField(
-                controller: _searchCtrl,
-                autofocus: true,
-                decoration: InputDecoration(
-                  hintText: 'Scan barcode atau ketik nama produk...',
-                  prefixIcon: const Icon(Icons.search),
-                  border: const OutlineInputBorder(),
-                  suffixIcon: cache.syncing
-                      ? const Padding(
-                          padding: EdgeInsets.all(14),
-                          child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-                        )
-                      : null,
-                ),
-                onChanged: (_) => setState(() {}),
-                onSubmitted: _scanBarcode,
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _searchCtrl,
+                      autofocus: true,
+                      decoration: InputDecoration(
+                        hintText: 'Cari nama, ID, atau barcode produk...',
+                        prefixIcon: const Icon(Icons.search),
+                        border: const OutlineInputBorder(),
+                        suffixIcon: cache.syncing
+                            ? const Padding(
+                                padding: EdgeInsets.all(14),
+                                child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                              )
+                            : null,
+                      ),
+                      onChanged: (_) => setState(() {}),
+                      onSubmitted: _scanBarcode,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: _bukaScanner,
+                    style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
+                    child: const Icon(Icons.qr_code_scanner),
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
               Expanded(
@@ -222,7 +224,7 @@ class _KasirScreenState extends State<KasirScreen> {
                         child: Text(
                           cache.produk.isEmpty
                               ? 'Menunggu data produk tersinkron...'
-                              : 'Cari atau scan produk untuk mulai',
+                              : 'Cari, scan, atau ketik ID produk untuk mulai',
                           style: const TextStyle(color: Colors.grey),
                         ),
                       )
@@ -250,7 +252,8 @@ class _KasirScreenState extends State<KasirScreen> {
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis),
                                     Text(rupiah(p['harga_jual']), style: const TextStyle(color: Colors.grey)),
-                                    Text('Stok: ${p['stok']}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                                    Text('ID: ${p['id']} • Stok: ${p['stok']}',
+                                        style: const TextStyle(color: Colors.grey, fontSize: 11)),
                                   ],
                                 ),
                               ),
@@ -281,17 +284,43 @@ class _KasirScreenState extends State<KasirScreen> {
                     itemCount: _cart.length,
                     itemBuilder: (_, i) {
                       final item = _cart[i];
-                      return ListTile(
-                        dense: true,
-                        title: Text(item.nama),
-                        subtitle: Text(rupiah(item.harga)),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(icon: const Icon(Icons.remove_circle_outline), onPressed: () => _ubahQty(item, -1)),
-                            Text('${item.qty}'),
-                            IconButton(icon: const Icon(Icons.add_circle_outline), onPressed: () => _ubahQty(item, 1)),
-                          ],
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 6),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(item.nama, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                    Text(
+                                      '${rupiah(item.harga)} x ${item.qty} = ${rupiah(item.subtotal)}',
+                                      style: const TextStyle(color: Colors.grey, fontSize: 12),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.remove_circle_outline),
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () => _ubahQty(item, -1),
+                              ),
+                              Text('${item.qty}'),
+                              IconButton(
+                                icon: const Icon(Icons.add_circle_outline),
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () => _ubahQty(item, 1),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close, color: Colors.red),
+                                tooltip: 'Hapus item (kalau salah tap)',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () => _hapusItem(item),
+                              ),
+                            ],
+                          ),
                         ),
                       );
                     },
