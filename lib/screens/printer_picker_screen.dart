@@ -38,7 +38,11 @@ class _PrinterPickerScreenState extends State<PrinterPickerScreen> {
     setState(() => _mencetak = printer);
     try {
       await ThermalPrinterService.connect(printer);
-      await ThermalPrinterService.printReceiptWidget(printer, ReceiptWidget(data: widget.data));
+      await ThermalPrinterService.printReceiptWidget(
+  context,
+  printer,
+  ReceiptWidget(data: widget.data),
+);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Struk terkirim ke printer')));
         Navigator.pop(context);
