@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../services/api_client.dart';
+import '../services/auth_service.dart';
 
 class KategoriScreen extends StatefulWidget {
   const KategoriScreen({super.key});
@@ -67,6 +69,8 @@ class _KategoriScreenState extends State<KategoriScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isAdmin = context.watch<AuthService>().role == 'admin';
+
     return Scaffold(
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -78,18 +82,20 @@ class _KategoriScreenState extends State<KategoriScreen> {
                   final k = _data[i] as Map<String, dynamic>;
                   return ListTile(
                     title: Text(k['nama'].toString()),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(icon: const Icon(Icons.edit), onPressed: () => _bukaForm(k)),
-                        IconButton(icon: const Icon(Icons.delete), onPressed: () => _hapus(k['id'])),
-                      ],
-                    ),
+                    trailing: isAdmin
+                        ? Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(icon: const Icon(Icons.edit), onPressed: () => _bukaForm(k)),
+                              IconButton(icon: const Icon(Icons.delete), onPressed: () => _hapus(k['id'])),
+                            ],
+                          )
+                        : null,
                   );
                 },
               ),
             ),
-      floatingActionButton: FloatingActionButton(onPressed: () => _bukaForm(), child: const Icon(Icons.add)),
+      floatingActionButton: isAdmin ? FloatingActionButton(onPressed: () => _bukaForm(), child: const Icon(Icons.add)) : null,
     );
   }
 }
