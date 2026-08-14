@@ -24,7 +24,7 @@ if (flutterVersionName == null) {
 }
 
 android {
-    namespace "com.marsa.fileziaroh"
+    namespace "com.marsa.kasir"
 
     // shared_preferences_android membutuhkan SDK 35
     compileSdk 35
