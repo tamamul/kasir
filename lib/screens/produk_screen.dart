@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/api_client.dart';
 import '../services/data_cache.dart';
+import '../services/auth_service.dart';
 import '../utils/format.dart';
 
 enum _Urutan { namaAZ, stokTerendah, stokTertinggi, terbaru }
@@ -55,6 +56,13 @@ class _ProdukScreenState extends State<ProdukScreen> {
     );
   }
 
+  void _bukaOpname(DataCache cache, Map<String, dynamic> p) {
+    showDialog(
+      context: context,
+      builder: (_) => _FormOpname(produk: p, onSaved: () => cache.sync()),
+    );
+  }
+
   Future<void> _hapus(DataCache cache, dynamic id) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -76,6 +84,8 @@ class _ProdukScreenState extends State<ProdukScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isAdmin = context.watch<AuthService>().role == 'admin';
+
     return Consumer<DataCache>(
       builder: (context, cache, _) {
         final hasil = _terapkanFilter(cache.produk);
@@ -84,6 +94,22 @@ class _ProdukScreenState extends State<ProdukScreen> {
         return Scaffold(
           body: Column(
             children: [
+              if (!isAdmin)
+                Container(
+                  width: double.infinity,
+                  color: Colors.blue.shade50,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.info_outline, size: 16, color: Colors.blueGrey),
+                      SizedBox(width: 6),
+                      Expanded(
+                        child: Text('Mode lihat saja — hubungi admin untuk ubah harga/stok/produk',
+                            style: TextStyle(fontSize: 12, color: Colors.blueGrey)),
+                      ),
+                    ],
+                  ),
+                ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
                 child: TextField(
@@ -180,13 +206,19 @@ class _ProdukScreenState extends State<ProdukScreen> {
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         Text('Stok: $stok', style: TextStyle(color: stok <= 0 ? Colors.red : null)),
-                                        PopupMenuButton<String>(
-                                          onSelected: (v) => v == 'edit' ? _bukaForm(cache, p) : _hapus(cache, p['id']),
-                                          itemBuilder: (_) => const [
-                                            PopupMenuItem(value: 'edit', child: Text('Edit')),
-                                            PopupMenuItem(value: 'hapus', child: Text('Nonaktifkan')),
-                                          ],
-                                        ),
+                                        if (isAdmin)
+                                          PopupMenuButton<String>(
+                                            onSelected: (v) {
+                                              if (v == 'edit') _bukaForm(cache, p);
+                                              if (v == 'opname') _bukaOpname(cache, p);
+                                              if (v == 'hapus') _hapus(cache, p['id']);
+                                            },
+                                            itemBuilder: (_) => const [
+                                              PopupMenuItem(value: 'edit', child: Text('Edit')),
+                                              PopupMenuItem(value: 'opname', child: Text('Sesuaikan Stok (Opname)')),
+                                              PopupMenuItem(value: 'hapus', child: Text('Nonaktifkan')),
+                                            ],
+                                          ),
                                       ],
                                     ),
                                   );
@@ -196,10 +228,12 @@ class _ProdukScreenState extends State<ProdukScreen> {
               ),
             ],
           ),
-          floatingActionButton: FloatingActionButton(
-            onPressed: () => _bukaForm(cache),
-            child: const Icon(Icons.add),
-          ),
+          floatingActionButton: isAdmin
+              ? FloatingActionButton(
+                  onPressed: () => _bukaForm(cache),
+                  child: const Icon(Icons.add),
+                )
+              : null,
         );
       },
     );
@@ -235,6 +269,8 @@ class _FormProdukState extends State<_FormProduk> {
   bool _aktif = true;
   bool _saving = false;
 
+  bool get _sedangEdit => widget.produk != null;
+
   @override
   void initState() {
     super.initState();
@@ -261,10 +297,14 @@ class _FormProdukState extends State<_FormProduk> {
       'kategori': _kategori.text,
       'harga_beli': _hargaBeli.text,
       'harga_jual': _hargaJual.text,
-      'stok': _stok.text,
       'satuan': _satuan.text,
       'aktif': _aktif ? 'Y' : 'N',
     };
+    // Stok cuma dikirim waktu bikin produk baru (stok awal). Waktu edit
+    // produk yang sudah ada, backend sudah tidak menerima perubahan stok
+    // lewat sini — dan tidak dikirim biar sesuai perilakunya.
+    if (!_sedangEdit) payload['stok'] = _stok.text;
+
     final id = widget.produk?['id'];
     if (id != null) payload['id'] = id;
     final res = await ApiClient.call(id != null ? 'updateProduk' : 'addProduk', payload);
@@ -281,7 +321,7 @@ class _FormProdukState extends State<_FormProduk> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.produk == null ? 'Produk Baru' : 'Edit Produk'),
+      title: Text(_sedangEdit ? 'Edit Produk' : 'Produk Baru'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -304,10 +344,16 @@ class _FormProdukState extends State<_FormProduk> {
             ]),
             Row(children: [
               Expanded(
-                  child: TextField(
-                      controller: _stok,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'Stok'))),
+                child: TextField(
+                  controller: _stok,
+                  enabled: !_sedangEdit,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: _sedangEdit ? 'Stok (pakai menu Opname)' : 'Stok Awal',
+                    helperText: _sedangEdit ? 'Ubah lewat Sesuaikan Stok (Opname)' : null,
+                  ),
+                ),
+              ),
               const SizedBox(width: 8),
               Expanded(child: TextField(controller: _satuan, decoration: const InputDecoration(labelText: 'Satuan'))),
             ]),
@@ -329,6 +375,95 @@ class _FormProdukState extends State<_FormProduk> {
               : const Text('Simpan'),
         ),
       ],
+    );
+  }
+}
+
+class _FormOpname extends StatefulWidget {
+  final Map<String, dynamic> produk;
+  final VoidCallback onSaved;
+  const _FormOpname({required this.produk, required this.onSaved});
+
+  @override
+  State<_FormOpname> createState() => _FormOpnameState();
+}
+
+class _FormOpnameState extends State<_FormOpname> {
+  late TextEditingController _stokBaru;
+  final _keteranganCtrl = TextEditingController();
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _stokBaru = TextEditingController(text: widget.produk['stok']?.toString() ?? '0');
+  }
+
+  int get _stokLama => int.tryParse(widget.produk['stok'].toString()) ?? 0;
+  int get _selisih => (int.tryParse(_stokBaru.text) ?? _stokLama) - _stokLama;
+
+  Future<void> _simpan() async {
+    final stokBaru = int.tryParse(_stokBaru.text);
+    if (stokBaru == null || stokBaru < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Stok baru harus angka dan tidak boleh negatif')));
+      return;
+    }
+    setState(() => _saving = true);
+    final res = await ApiClient.call('adjustStok', {
+      'produk_id': widget.produk['id'],
+      'stok_baru': stokBaru,
+      'keterangan': _keteranganCtrl.text,
+    });
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (!res.isSuccess) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal: ${res.message}')));
+      return;
+    }
+    Navigator.pop(context);
+    widget.onSaved();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selisih = _selisih;
+    return StatefulBuilder(
+      builder: (context, setLocal) => AlertDialog(
+        title: Text('Sesuaikan Stok — ${widget.produk['nama']}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Stok sistem saat ini: $_stokLama', style: const TextStyle(color: Colors.grey)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _stokBaru,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Stok fisik sebenarnya', border: OutlineInputBorder()),
+              onChanged: (_) => setLocal(() {}),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              selisih == 0 ? 'Tidak ada selisih' : (selisih > 0 ? 'Selisih: +$selisih' : 'Selisih: $selisih'),
+              style: TextStyle(fontWeight: FontWeight.bold, color: selisih < 0 ? Colors.red : Colors.green),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _keteranganCtrl,
+              decoration: const InputDecoration(labelText: 'Keterangan (misal: rusak, hilang, salah hitung)', border: OutlineInputBorder()),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
+          FilledButton(
+            onPressed: _saving ? null : _simpan,
+            child: _saving
+                ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('Simpan'),
+          ),
+        ],
+      ),
     );
   }
 }
