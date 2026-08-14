@@ -34,12 +34,12 @@ class _HomeShellState extends State<HomeShell> {
     _MenuItem('Produk', Icons.inventory_2, ProdukScreen()),
     _MenuItem('Kategori', Icons.category, KategoriScreen()),
     _MenuItem('Pelanggan', Icons.people, PelangganScreen()),
-    _MenuItem('Stok Masuk', Icons.move_to_inbox, PembelianScreen()),
     _MenuItem('Piutang', Icons.request_quote, PiutangScreen()),
     _MenuItem('Laporan', Icons.receipt_long, LaporanScreen()),
   ];
 
   static const _adminItems = [
+    _MenuItem('Stok Masuk', Icons.move_to_inbox, PembelianScreen()),
     _MenuItem('Rekap Harian', Icons.summarize, RekapHarianScreen()),
     _MenuItem('Users', Icons.admin_panel_settings, UsersScreen()),
     _MenuItem('Pengaturan', Icons.settings, PengaturanScreen()),
