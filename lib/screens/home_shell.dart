@@ -55,42 +55,94 @@ class _HomeShellState extends State<HomeShell> {
     return Scaffold(
       appBar: AppBar(title: Text(menu[activeIndex].label)),
       drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
+  child: ListView(
+    padding: EdgeInsets.zero,
+    children: [
+      DrawerHeader(
+        decoration: const BoxDecoration(
+          color: Color(0xFF1565C0), // warna header
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            DrawerHeader(
-              decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  const Icon(Icons.storefront, color: Colors.white, size: 36),
-                  const SizedBox(height: 8),
-                  Text(auth.user?['username']?.toString() ?? '',
-                      style: const TextStyle(color: Colors.white, fontSize: 16)),
-                  Text(auth.role, style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                ],
+            const Icon(
+              Icons.storefront,
+              color: Colors.white,
+              size: 36,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              auth.user?['username']?.toString() ?? '',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
               ),
             ),
-            for (var i = 0; i < menu.length; i++)
-              ListTile(
-                leading: Icon(menu[i].icon),
-                title: Text(menu[i].label),
-                selected: i == activeIndex,
-                onTap: () {
-                  setState(() => _index = i);
-                  Navigator.pop(context);
-                },
+            Text(
+              auth.role,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 12,
               ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.logout),
-              title: const Text('Keluar'),
-              onTap: () => auth.logout(),
             ),
           ],
         ),
       ),
+
+      for (var i = 0; i < menu.length; i++)
+        ListTile(
+          leading: Icon(
+            menu[i].icon,
+            color: i == activeIndex
+                ? const Color(0xFF1565C0)
+                : Colors.grey.shade700,
+          ),
+          title: Text(
+            menu[i].label,
+            style: TextStyle(
+              color: i == activeIndex
+                  ? const Color(0xFF1565C0)
+                  : Colors.black87,
+              fontWeight: i == activeIndex
+                  ? FontWeight.bold
+                  : FontWeight.normal,
+            ),
+          ),
+          selected: i == activeIndex,
+          selectedTileColor: const Color(0xFFE3F2FD),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 3,
+          ),
+          onTap: () {
+            setState(() => _index = i);
+            Navigator.pop(context);
+          },
+        ),
+
+      const Divider(),
+
+      ListTile(
+        leading: const Icon(
+          Icons.logout,
+          color: Colors.red,
+        ),
+        title: const Text(
+          'Keluar',
+          style: TextStyle(
+            color: Colors.red,
+          ),
+        ),
+        onTap: () => auth.logout(),
+      ),
+    ],
+  ),
+),
       body: IndexedStack(
         index: activeIndex,
         children: [for (final m in menu) m.screen],
