@@ -8,6 +8,7 @@ import 'pelanggan_screen.dart';
 import 'pembelian_screen.dart';
 import 'piutang_screen.dart';
 import 'laporan_screen.dart';
+import 'rekap_harian_screen.dart';
 import 'users_screen.dart';
 import 'pengaturan_screen.dart';
 
@@ -39,6 +40,7 @@ class _HomeShellState extends State<HomeShell> {
   ];
 
   static const _adminItems = [
+    _MenuItem('Rekap Harian', Icons.summarize, RekapHarianScreen()),
     _MenuItem('Users', Icons.admin_panel_settings, UsersScreen()),
     _MenuItem('Pengaturan', Icons.settings, PengaturanScreen()),
   ];
