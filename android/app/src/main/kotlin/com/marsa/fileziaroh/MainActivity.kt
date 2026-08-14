@@ -1,4 +1,4 @@
-package com.marsa.fileziaroh
+package com.marsa.kasir
 
 import android.content.res.Configuration
 import android.os.Bundle
